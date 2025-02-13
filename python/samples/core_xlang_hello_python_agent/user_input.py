@@ -35,4 +35,5 @@ class UserProxy(RoutedAgent):
             pass
 
     async def ainput(self, prompt: str) -> str:
-        return await asyncio.to_thread(input, f"{prompt} ")
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, input, f"{prompt} ")

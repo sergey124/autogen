@@ -2,6 +2,11 @@ import asyncio
 import logging
 import os
 import sys
+import platform
+
+# Check if running on Windows and set compatible event loop policy
+if platform.system() == "Windows":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # from protos.agents_events_pb2 import NewMessageReceived
 from autogen_core import (
@@ -14,9 +19,6 @@ from autogen_core import (
 )
 from autogen_ext.runtimes.grpc import GrpcWorkerAgentRuntime
 
-# Add the local package directory to sys.path
-thisdir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(thisdir, "..", ".."))
 from dotenv import load_dotenv  # type: ignore # noqa: E402
 from protos.agent_events_pb2 import NewMessageReceived, Output  # type: ignore # noqa: E402
 from user_input import UserProxy  # type: ignore # noqa: E402
@@ -27,13 +29,13 @@ agnext_logger = logging.getLogger("autogen_core")
 async def main() -> None:
     load_dotenv()
     agentHost = os.getenv("AGENT_HOST") or "http://localhost:50673"
-    # grpc python bug - can only use the hostname, not prefix - if hostname has a prefix we have to remove it:
-    if agentHost.startswith("http://"):
-        agentHost = agentHost[7:]
-    if agentHost.startswith("https://"):
-        agentHost = agentHost[8:]
+
+    # Strip protocol prefixes if present
+    agentHost = agentHost.removeprefix("http://").removeprefix("https://")
+
     agnext_logger.info("0")
     agnext_logger.info(agentHost)
+
     runtime = GrpcWorkerAgentRuntime(host_address=agentHost, payload_serialization_format=PROTOBUF_DATA_CONTENT_TYPE)
 
     agnext_logger.info("1")
@@ -63,12 +65,18 @@ async def main() -> None:
         topic_id=DefaultTopicId("agents.Output", "HelloAgents"),
         sender=AgentId("HelloAgents", "python"),
     )
-    await runtime.stop_when_signal()
-    # await runtime.stop_when_idle()
+
+    try:
+        await asyncio.Event().wait()  # Keeps running indefinitely
+    except asyncio.CancelledError:
+        pass  # Handle shutdown properly
+
+    await runtime.stop_when_idle()
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     agnext_logger.setLevel(logging.DEBUG)
     agnext_logger.log(logging.DEBUG, "Starting worker")
+
     asyncio.run(main())
